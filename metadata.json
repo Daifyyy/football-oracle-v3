@@ -1,0 +1,5 @@
+{
+  "name": "Football Oracle - AI Predictions",
+  "description": "A high-performance football prediction dashboard utilizing the API-Football v3 service to provide deep insights, win probabilities, and match comparisons.",
+  "requestFramePermissions": []
+}
