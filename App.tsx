@@ -66,16 +66,13 @@ const App: React.FC = () => {
     setHomeTeamStats(null);
     setAwayTeamStats(null);
 
-    if (window.innerWidth < 1024) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
     const matchInfo = filteredFixtures.find(f => f.fixture.id === fixtureId);
 
     try {
       const data = await getPredictions(fixtureId);
       if (data && matchInfo) {
         setPredictionData(data);
+        // Explicitly using season 2025 for current 2025/2026 data
         const [homeStats, awayStats] = await Promise.all([
           getTeamStatistics(matchInfo.teams.home.id, matchInfo.league.id, 2025),
           getTeamStatistics(matchInfo.teams.away.id, matchInfo.league.id, 2025)
@@ -83,19 +80,23 @@ const App: React.FC = () => {
         setHomeTeamStats(homeStats);
         setAwayTeamStats(awayStats);
 
+        // Initialize Gemini with correct constructor
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analyzuj: ${matchInfo.teams.home.name} vs ${matchInfo.teams.away.name}. 
-          Tým A form: ${homeStats?.form || 'N/A'}. Tým B form: ${awayStats?.form || 'N/A'}. 
-          Vytvoř krátký taktický odstavec v češtině o tom, co čekat od zápasu.`;
-        
-        const aiResponse = await ai.models.generateContent({
+        const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: prompt,
+          contents: `Analyzuj fotbalový zápas: ${matchInfo.teams.home.name} vs ${matchInfo.teams.away.name}. 
+            Tým A (domácí) forma: ${homeStats?.form || 'N/A'}. 
+            Tým B (hosté) forma: ${awayStats?.form || 'N/A'}. 
+            Předpověď výsledku: ${data.predictions.advice}.
+            Vytvoř jeden krátký, profesionální taktický odstavec v českém jazyce, který vysvětluje, co od zápasu očekávat a jaké jsou klíčové faktory.`,
         });
-        setTacticalPreview(aiResponse.text);
+        
+        setTacticalPreview(response.text || "Neural report sequence completed.");
       }
     } catch (err) {
-      setError("Neural analysis failed.");
+      console.error("Neural analysis failed:", err);
+      setError("AI Tactical Intelligence offline.");
+      setTacticalPreview("Nepodařilo se vygenerovat taktický report. Ověřte nastavení API klíče.");
     } finally {
       setIsLoading(false);
     }
@@ -184,26 +185,34 @@ const App: React.FC = () => {
             <i className="fas fa-microchip text-white text-lg"></i>
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tighter uppercase italic">FOOTBALL <span className="text-blue-500">ORACLE</span></h1>
+            <h1 className="text-xl font-black tracking-tighter uppercase italic leading-none">
+              FOOTBALL <span className="text-blue-500">ORACLE</span>
+            </h1>
             <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.3em]">Season 2025/2026 Core</p>
           </div>
         </div>
         <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
           {(['yesterday', 'today', 'tomorrow'] as DateType[]).map((t) => (
-            <button key={t} onClick={() => setActiveDateTab(t)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeDateTab === t ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}>{t}</button>
+            <button 
+              key={t} 
+              onClick={() => { setActiveDateTab(t); setSelectedFixtureId(null); }} 
+              className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeDateTab === t ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+            >
+              {t}
+            </button>
           ))}
         </div>
       </header>
 
-      <div className="flex-1 max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 overflow-x-hidden">
-        <aside className={`${selectedFixtureId && 'hidden lg:flex'} lg:col-span-3 border-r border-slate-800 bg-slate-900/10 flex flex-col h-[calc(100vh-73px)]`}>
-          {/* League selection area at the top of the sidebar, non-sticky inside flex */}
-          <div className="p-6 pb-2">
+      <div className="flex-1 max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 overflow-x-hidden relative">
+        {/* Sidebar Container - Controlled by selectedFixtureId on Mobile */}
+        <aside className={`${selectedFixtureId ? 'hidden lg:flex' : 'flex'} lg:col-span-3 border-r border-slate-800 bg-slate-900/10 flex-col h-[calc(100vh-73px)] w-full`}>
+          <div className="p-6 pb-2 shrink-0">
             <LeagueSidebar selectedLeagueId={selectedLeagueId} onLeagueSelect={(id) => { setSelectedLeagueId(id); setSelectedFixtureId(null); }} />
           </div>
-          {/* Matches area below, takes remaining space and scrolls */}
+          
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 pt-2 space-y-3">
-            <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center gap-3 mb-4 sticky top-0 bg-[#020617] py-2 z-10">
               <div className="w-1 h-4 bg-blue-500 rounded-full"></div>
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Available Fixtures</h4>
             </div>
@@ -226,20 +235,40 @@ const App: React.FC = () => {
           </div>
         </aside>
 
-        <main className={`${!selectedFixtureId && 'hidden lg:block'} lg:col-span-9 p-8 overflow-y-auto custom-scrollbar`}>
+        {/* Main Content Area - Hidden on mobile if no match selected */}
+        <main className={`${!selectedFixtureId ? 'hidden lg:block' : 'block'} lg:col-span-9 p-4 md:p-8 overflow-y-auto custom-scrollbar w-full`}>
+          {selectedFixtureId && (
+            <button 
+              onClick={() => setSelectedFixtureId(null)}
+              className="lg:hidden mb-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-widest text-blue-500 bg-blue-500/10 border border-blue-500/20 px-4 py-2 rounded-xl transition-all active:scale-95"
+            >
+              <i className="fas fa-arrow-left"></i> Zpět k zápasům
+            </button>
+          )}
+
           {selectedFixtureId && predictionData ? (
             <div className="max-w-5xl mx-auto space-y-12 pb-12">
                <MatchCard data={predictionData} fixtureStatus={selectedMatchInfo?.fixture.status.short} realScore={selectedMatchInfo?.goals} />
                
-               {tacticalPreview && (
-                 <div className="p-8 bg-slate-900 border border-slate-800 rounded-[2rem] shadow-xl">
-                    <div className="flex items-center gap-3 mb-4">
-                       <i className="fas fa-brain text-blue-500 text-xs"></i>
-                       <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Neural Tactic Report</h4>
+               <div className="p-8 bg-slate-900 border border-slate-800 rounded-[2rem] shadow-xl relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <i className="fas fa-robot text-7xl text-blue-500"></i>
+                  </div>
+                  <div className="flex items-center gap-3 mb-4 relative z-10">
+                     <i className="fas fa-brain text-blue-500 text-xs"></i>
+                     <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-blue-500">Neural Tactic Report</h4>
+                  </div>
+                  {isLoading ? (
+                    <div className="flex items-center gap-3 text-slate-500 animate-pulse">
+                      <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-[10px] font-bold uppercase tracking-widest">Processing Tactical Signals...</span>
                     </div>
-                    <p className="text-slate-300 leading-relaxed italic border-l-2 border-blue-500/20 pl-6">{tacticalPreview}</p>
-                 </div>
-               )}
+                  ) : (
+                    <p className="text-slate-300 leading-relaxed italic border-l-2 border-blue-500/20 pl-6 relative z-10">
+                      {tacticalPreview || "Report v přípravě..."}
+                    </p>
+                  )}
+               </div>
 
                {renderStatsTable()}
 
@@ -251,16 +280,16 @@ const App: React.FC = () => {
                     </div>
                     <div className="space-y-4">
                        {predictionData.h2h.slice(0, 3).map((match, idx) => (
-                         <div key={idx} className="flex items-center justify-between p-4 bg-slate-950/50 border border-slate-800 rounded-2xl hover:border-slate-700 transition-colors">
-                            <div className="flex-1 flex items-center gap-4">
+                         <div key={idx} className="flex flex-col md:flex-row items-center justify-between p-4 bg-slate-950/50 border border-slate-800 rounded-2xl hover:border-slate-700 transition-colors gap-4">
+                            <div className="flex-1 flex items-center gap-4 w-full">
                                <img src={match.teams.home.logo} className="w-6 h-6 object-contain" alt="" />
-                               <span className="text-xs font-bold truncate max-w-[120px]">{match.teams.home.name}</span>
+                               <span className="text-xs font-bold truncate">{match.teams.home.name}</span>
                             </div>
-                            <div className="w-20 text-center font-mono font-black text-white bg-slate-900 px-3 py-1 rounded-lg border border-slate-800">
+                            <div className="w-full md:w-20 text-center font-mono font-black text-white bg-slate-900 px-3 py-1 rounded-lg border border-slate-800">
                                {match.goals.home} : {match.goals.away}
                             </div>
-                            <div className="flex-1 flex items-center justify-end gap-4">
-                               <span className="text-xs font-bold truncate max-w-[120px]">{match.teams.away.name}</span>
+                            <div className="flex-1 flex items-center justify-end gap-4 w-full">
+                               <span className="text-xs font-bold truncate text-right">{match.teams.away.name}</span>
                                <img src={match.teams.away.logo} className="w-6 h-6 object-contain" alt="" />
                             </div>
                          </div>
@@ -270,15 +299,15 @@ const App: React.FC = () => {
                )}
             </div>
           ) : isLoading ? (
-            <div className="h-full flex flex-col items-center justify-center">
+            <div className="h-full flex flex-col items-center justify-center py-32">
                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                <p className="text-xs font-black uppercase tracking-widest text-blue-500">Decrypting Match Matrix...</p>
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center opacity-30">
+            <div className="h-full flex flex-col items-center justify-center opacity-30 py-32">
                <i className="fas fa-shield-halved text-6xl mb-6 text-blue-500/50"></i>
                <h2 className="text-2xl font-black uppercase italic tracking-tighter">Engagement Required</h2>
-               <p className="text-xs mt-2 uppercase tracking-widest">Select target sector to activate Oracle</p>
+               <p className="text-xs mt-2 uppercase tracking-widest">Vyberte zápas pro aktivaci Oracle AI</p>
             </div>
           )}
         </main>
@@ -289,6 +318,9 @@ const App: React.FC = () => {
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #334155; }
+        @media (max-width: 1024px) {
+          aside { height: auto; max-height: calc(100vh - 73px); }
+        }
       `}</style>
     </div>
   );

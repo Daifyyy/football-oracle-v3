@@ -84,7 +84,6 @@ export async function getFixtures(date: string): Promise<Fixture[]> {
 }
 
 export async function getTeamStatistics(teamId: number, leagueId: number, season: number = 2025): Promise<any> {
-  // We prioritize the 2025/2026 season (API identifies it as 2025)
   const cacheKey = `stats_${teamId}_${leagueId}_${season}`;
   const cachedData = cache.get<any>(cacheKey);
   
@@ -104,8 +103,8 @@ export async function getTeamStatistics(teamId: number, leagueId: number, season
 
   let stats = await fetchStats(season);
   
-  // Minimal fallback only if 2025 has absolutely no data
-  if ((!stats || !stats.fixtures || stats.fixtures.played.total === 0)) {
+  // Only fallback if 2025 is empty
+  if (!stats || !stats.fixtures || stats.fixtures.played.total === 0) {
     stats = await fetchStats(season - 1);
   }
 
