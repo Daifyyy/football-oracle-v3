@@ -26,8 +26,6 @@ const App: React.FC = () => {
   const [isFixturesLoading, setIsFixturesLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mainContentRef = useRef<HTMLElement>(null);
-
   const dates = useMemo(() => {
     const today = new Date();
     const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
@@ -72,7 +70,6 @@ const App: React.FC = () => {
       const data = await getPredictions(fixtureId);
       if (data && matchInfo) {
         setPredictionData(data);
-        // Explicitly using season 2025 for current 2025/2026 data
         const [homeStats, awayStats] = await Promise.all([
           getTeamStatistics(matchInfo.teams.home.id, matchInfo.league.id, 2025),
           getTeamStatistics(matchInfo.teams.away.id, matchInfo.league.id, 2025)
@@ -80,23 +77,28 @@ const App: React.FC = () => {
         setHomeTeamStats(homeStats);
         setAwayTeamStats(awayStats);
 
-        // Initialize Gemini with correct constructor
+        // Verification of API_KEY presence before call
+        if (!process.env.API_KEY) {
+          throw new Error("Missing Gemini API Key in environment.");
+        }
+
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const response = await ai.models.generateContent({
+        const result = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: `Analyzuj fotbalový zápas: ${matchInfo.teams.home.name} vs ${matchInfo.teams.away.name}. 
-            Tým A (domácí) forma: ${homeStats?.form || 'N/A'}. 
-            Tým B (hosté) forma: ${awayStats?.form || 'N/A'}. 
-            Předpověď výsledku: ${data.predictions.advice}.
-            Vytvoř jeden krátký, profesionální taktický odstavec v českém jazyce, který vysvětluje, co od zápasu očekávat a jaké jsou klíčové faktory.`,
+          contents: `Analyzuj fotbalový zápas v českém jazyce.
+            Zápas: ${matchInfo.teams.home.name} vs ${matchInfo.teams.away.name}
+            Domácí forma: ${homeStats?.form || 'N/A'}
+            Hosté forma: ${awayStats?.form || 'N/A'}
+            Doporučení: ${data.predictions.advice}
+            Vytvoř jeden profesionální, stručný odstavec o taktice a co očekávat.`,
         });
         
-        setTacticalPreview(response.text || "Neural report sequence completed.");
+        setTacticalPreview(result.text || "Analýza dokončena.");
       }
     } catch (err) {
       console.error("Neural analysis failed:", err);
-      setError("AI Tactical Intelligence offline.");
-      setTacticalPreview("Nepodařilo se vygenerovat taktický report. Ověřte nastavení API klíče.");
+      setError("Neural analysis failed. Verify API configuration.");
+      setTacticalPreview("Nepodařilo se vygenerovat report. Ujistěte se, že je v prostředí Vercelu správně nastaven 'API_KEY'.");
     } finally {
       setIsLoading(false);
     }
@@ -205,7 +207,6 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex-1 max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 overflow-x-hidden relative">
-        {/* Sidebar Container - Controlled by selectedFixtureId on Mobile */}
         <aside className={`${selectedFixtureId ? 'hidden lg:flex' : 'flex'} lg:col-span-3 border-r border-slate-800 bg-slate-900/10 flex-col h-[calc(100vh-73px)] w-full`}>
           <div className="p-6 pb-2 shrink-0">
             <LeagueSidebar selectedLeagueId={selectedLeagueId} onLeagueSelect={(id) => { setSelectedLeagueId(id); setSelectedFixtureId(null); }} />
@@ -235,7 +236,6 @@ const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* Main Content Area - Hidden on mobile if no match selected */}
         <main className={`${!selectedFixtureId ? 'hidden lg:block' : 'block'} lg:col-span-9 p-4 md:p-8 overflow-y-auto custom-scrollbar w-full`}>
           {selectedFixtureId && (
             <button 

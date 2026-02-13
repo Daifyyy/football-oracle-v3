@@ -3,7 +3,6 @@ import { ApiResponse, PredictionResponse, Fixture } from '../types';
 
 const API_BASE_URL = 'https://v3.football.api-sports.io';
 const FOOTBALL_API_KEY = 'ea7e8a05b9a488c38470487ae51ef460';
-const CACHE_TTL = 24 * 60 * 60 * 1000; 
 
 const getHeaders = () => ({
   'x-apisports-key': FOOTBALL_API_KEY,
@@ -21,8 +20,19 @@ const cache = {
     if (!itemStr) return null;
     try {
       const item = JSON.parse(itemStr) as CacheItem<T>;
-      const now = new Date().getTime();
-      if (now - item.timestamp > CACHE_TTL) {
+      const now = new Date();
+      
+      // Calculate the most recent 6:00 UTC refresh point
+      const lastRefresh = new Date(now);
+      lastRefresh.setUTCHours(6, 0, 0, 0);
+      
+      // If current time is before 6:00 UTC today, the relevant refresh was yesterday at 6:00 UTC
+      if (now.getUTCHours() < 6) {
+        lastRefresh.setUTCDate(lastRefresh.getUTCDate() - 1);
+      }
+
+      // If data was cached BEFORE the last 6:00 UTC refresh, invalidate it
+      if (item.timestamp < lastRefresh.getTime()) {
         localStorage.removeItem(key);
         return null;
       }
@@ -103,7 +113,7 @@ export async function getTeamStatistics(teamId: number, leagueId: number, season
 
   let stats = await fetchStats(season);
   
-  // Only fallback if 2025 is empty
+  // Fallback to previous season only if current season (2025) has NO data at all
   if (!stats || !stats.fixtures || stats.fixtures.played.total === 0) {
     stats = await fetchStats(season - 1);
   }
