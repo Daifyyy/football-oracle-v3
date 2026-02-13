@@ -70,6 +70,7 @@ export interface Fixture {
     country: string;
     logo: string;
     flag: string;
+    season: number;
   };
   teams: {
     home: Team;
